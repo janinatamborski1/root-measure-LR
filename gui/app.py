@@ -1095,6 +1095,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         self.sidebar.btn_prev_plate.pack_forget()
         self.sidebar.btn_manual_trace.pack_forget()
         self.sidebar.btn_edit_points.pack_forget()
+        self.sidebar.btn_add_point.pack_forget()
         self.sidebar.hide_manual_trace_modes()
         self.sidebar.hide_review_toggles()
 

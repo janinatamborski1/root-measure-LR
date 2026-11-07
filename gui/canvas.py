@@ -108,6 +108,8 @@ class ImageCanvas(ctk.CTkFrame):
         self._edit_trace_handle_idx = None  # indices into path for each handle
         self._edit_trace_deltas = None      # Mx2 (row,col) offset applied at each handle
         self._edit_trace_drag = None        # handle index currently being dragged
+        self._edit_trace_orig_idx = None    # handle indices at start (for reset)
+        self._edit_trace_add_mode = False   # True: clicking the path adds a point
         self._edit_trace_marker_ids = []    # canvas ids of handle markers
         self._edit_trace_line_ids = []      # canvas ids of the deformed path segments
 
@@ -347,6 +349,8 @@ class ImageCanvas(ctk.CTkFrame):
             self._edit_trace_handle_idx = np.unique(
                 np.round(np.linspace(0, n - 1, m)).astype(int))
         self._edit_trace_deltas = np.zeros((len(self._edit_trace_handle_idx), 2))
+        self._edit_trace_orig_idx = self._edit_trace_handle_idx.copy()
+        self._edit_trace_add_mode = False
         self._edit_trace_drag = None
         self._redraw()
 
@@ -362,12 +366,47 @@ class ImageCanvas(ctk.CTkFrame):
         self._edit_trace_handle_idx = None
         self._edit_trace_deltas = None
         self._edit_trace_drag = None
+        self._edit_trace_orig_idx = None
+        self._edit_trace_add_mode = False
 
     def reset_edit_trace(self):
-        """Undo all drag edits made so far, back to the original path."""
+        """Undo all edits made so far (drags and added points), back to
+        the original path."""
         if self._edit_trace_deltas is not None:
-            self._edit_trace_deltas[:] = 0
+            self._edit_trace_handle_idx = self._edit_trace_orig_idx.copy()
+            self._edit_trace_deltas = np.zeros((len(self._edit_trace_handle_idx), 2))
+            self._edit_trace_drag = None
             self._redraw()
+
+    def set_edit_trace_add_mode(self, on):
+        """Turn add-point mode on/off. While on, pressing on the path adds
+        a new draggable point there (and drags it until release)."""
+        self._edit_trace_add_mode = bool(on)
+
+    def add_edit_trace_point(self, canvas_x, canvas_y, threshold=20):
+        """Insert a new draggable handle at the spot on the current path
+        nearest the given canvas position. The path itself doesn't change
+        until the new point is dragged. Returns the new handle index, or
+        None if the click wasn't near the path or too close to a point."""
+        if self._edit_trace_path is None:
+            return None
+        path = self._edit_trace_deformed()
+        pts = np.array([self.image_to_canvas(col, row) for row, col in path])
+        d = np.hypot(pts[:, 0] - canvas_x, pts[:, 1] - canvas_y)
+        pidx = int(d.argmin())
+        if d[pidx] > threshold:
+            return None
+        idx = self._edit_trace_handle_idx
+        if pidx in idx:
+            return None
+        pos = int(np.searchsorted(idx, pidx))
+        if pos <= 0 or pos >= len(idx):
+            return None  # never before the top or after the tip
+        delta = path[pidx] - self._edit_trace_path[pidx]
+        self._edit_trace_handle_idx = np.insert(idx, pos, pidx)
+        self._edit_trace_deltas = np.insert(
+            self._edit_trace_deltas, pos, delta, axis=0)
+        return pos
 
     def _edit_trace_deformed(self):
         """Current path: straight-line (shortest-distance) interpolation
@@ -1204,6 +1243,7 @@ class ImageCanvas(ctk.CTkFrame):
             ],
             self.MODE_EDIT_TRACE: [
                 ("Drag a point", "Reshape the path near that point"),
+                ("Add Point button, then click path", "Add a new point"),
                 ("Enter", "Confirm edited path"),
                 ("Right-click", "Reset all points"),
             ],
@@ -1434,6 +1474,8 @@ class ImageCanvas(ctk.CTkFrame):
             self._rect_start = (row, col)
         elif self._mode == self.MODE_EDIT_TRACE:
             self._edit_trace_drag = self._find_nearest_edit_handle(event.x, event.y)
+            if self._edit_trace_drag is None and self._edit_trace_add_mode:
+                self._edit_trace_drag = self.add_edit_trace_point(event.x, event.y)
             self._draw_edit_trace_overlay()
         elif self._mode == self.MODE_MANUAL_TRACE:
             if self._manual_trace_submode == 'freehand':
@@ -1561,7 +1603,10 @@ class ImageCanvas(ctk.CTkFrame):
                 self._on_click_callback()
         elif self._mode == self.MODE_COUNT_LR:
             col, row = self.canvas_to_image(sx, sy)
-            idx = self._find_nearest_lr_point(col, row, threshold=15)
+            # remove-radius is fixed on screen (marker half-width is 6px), not
+            # in image pixels, so zooming in lets markers sit closer together
+            rm_thresh = 8 / self._scale if self._scale > 0 else 15
+            idx = self._find_nearest_lr_point(col, row, threshold=rm_thresh)
             if idx is not None:
                 self._lr_points.pop(idx)
                 self._redraw()

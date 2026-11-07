@@ -656,6 +656,12 @@ class Sidebar(ctk.CTkScrollableFrame):
             command=lambda: app._start_edit_trace())
         # starts hidden
 
+        # Add Point button (shown only while editing points; toggles add mode)
+        self.btn_add_point = ctk.CTkButton(
+            self._status_frame, text="Add Point", fg_color="#4f8a6b",
+            command=lambda: app._toggle_edit_trace_add_point())
+        # starts hidden
+
         # Trace mode checkboxes (radio-button behavior, freehand default)
         self._trace_mode_var = ctk.StringVar(value='freehand')
         self._trace_mode_frame = ctk.CTkFrame(
