@@ -109,7 +109,6 @@ class ImageCanvas(ctk.CTkFrame):
         self._edit_trace_deltas = None      # Mx2 (row,col) offset applied at each handle
         self._edit_trace_drag = None        # handle index currently being dragged
         self._edit_trace_orig_idx = None    # handle indices at start (for reset)
-        self._edit_trace_add_mode = False   # True: clicking the path adds a point
         self._edit_trace_marker_ids = []    # canvas ids of handle markers
         self._edit_trace_line_ids = []      # canvas ids of the deformed path segments
 
@@ -350,7 +349,6 @@ class ImageCanvas(ctk.CTkFrame):
                 np.round(np.linspace(0, n - 1, m)).astype(int))
         self._edit_trace_deltas = np.zeros((len(self._edit_trace_handle_idx), 2))
         self._edit_trace_orig_idx = self._edit_trace_handle_idx.copy()
-        self._edit_trace_add_mode = False
         self._edit_trace_drag = None
         self._redraw()
 
@@ -367,7 +365,6 @@ class ImageCanvas(ctk.CTkFrame):
         self._edit_trace_deltas = None
         self._edit_trace_drag = None
         self._edit_trace_orig_idx = None
-        self._edit_trace_add_mode = False
 
     def reset_edit_trace(self):
         """Undo all edits made so far (drags and added points), back to
@@ -378,10 +375,17 @@ class ImageCanvas(ctk.CTkFrame):
             self._edit_trace_drag = None
             self._redraw()
 
-    def set_edit_trace_add_mode(self, on):
-        """Turn add-point mode on/off. While on, pressing on the path adds
-        a new draggable point there (and drags it until release)."""
-        self._edit_trace_add_mode = bool(on)
+    def remove_edit_trace_handle(self, handle_idx):
+        """Delete an interior handle; the path straightens between its
+        neighbours. Top and tip can't be removed."""
+        n = len(self._edit_trace_handle_idx)
+        if handle_idx is None or handle_idx <= 0 or handle_idx >= n - 1:
+            return False
+        self._edit_trace_handle_idx = np.delete(self._edit_trace_handle_idx, handle_idx)
+        self._edit_trace_deltas = np.delete(self._edit_trace_deltas, handle_idx, axis=0)
+        self._edit_trace_drag = None
+        self._draw_edit_trace_overlay()
+        return True
 
     def add_edit_trace_point(self, canvas_x, canvas_y, threshold=20):
         """Insert a new draggable handle at the spot on the current path
@@ -1243,9 +1247,10 @@ class ImageCanvas(ctk.CTkFrame):
             ],
             self.MODE_EDIT_TRACE: [
                 ("Drag a point", "Reshape the path near that point"),
-                ("Add Point button, then click path", "Add a new point"),
+                ("Shift+click the root", "Add a new point there"),
+                ("Right-click a point", "Remove that point"),
                 ("Enter", "Confirm edited path"),
-                ("Right-click", "Reset all points"),
+                ("Right-click elsewhere", "Reset all points"),
             ],
         }
         _MODE_NAMES = {
@@ -1474,7 +1479,7 @@ class ImageCanvas(ctk.CTkFrame):
             self._rect_start = (row, col)
         elif self._mode == self.MODE_EDIT_TRACE:
             self._edit_trace_drag = self._find_nearest_edit_handle(event.x, event.y)
-            if self._edit_trace_drag is None and self._edit_trace_add_mode:
+            if self._edit_trace_drag is None and (event.state & 0x0001):  # Shift held
                 self._edit_trace_drag = self.add_edit_trace_point(event.x, event.y)
             self._draw_edit_trace_overlay()
         elif self._mode == self.MODE_MANUAL_TRACE:
@@ -1759,7 +1764,14 @@ class ImageCanvas(ctk.CTkFrame):
                 self._on_click_callback()
 
     def _on_right_click(self, event):
-        """Right-click / two-finger click: undo last action."""
+        """Right-click / two-finger click: undo last action. In edit-trace
+        mode, right-clicking a point removes it instead (right-click away
+        from any point still resets all points)."""
+        if self._mode == self.MODE_EDIT_TRACE and self._edit_trace_path is not None:
+            h = self._find_nearest_edit_handle(event.x, event.y)
+            if h is not None:
+                self.remove_edit_trace_handle(h)
+                return
         self._undo()
 
     def _remove_root_at(self, idx):

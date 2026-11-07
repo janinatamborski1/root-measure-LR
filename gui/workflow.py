@@ -1175,36 +1175,16 @@ class MeasurementMixin:
         self.sidebar.btn_done.configure(
             text="Finish Editing", command=lambda: self.canvas._trigger_done())
         self.sidebar.btn_done.pack(pady=(5, 0), padx=15, fill="x")
-        self.sidebar.btn_add_point.configure(
-            text="Add Point", fg_color="#4f8a6b")
-        self.sidebar.btn_add_point.pack(pady=(3, 0), padx=15, fill="x")
         self.sidebar.btn_prev_plate.configure(
             text="Cancel Editing", command=self._cancel_edit_trace)
         self.sidebar.btn_prev_plate.pack(pady=(3, 0), padx=15, fill="x")
         self.sidebar.set_status(
             "Drag a point to reshape the root (top/tip stay fixed).\n"
-            "Add Point = then click the root to add a point.\n"
-            "Right-click = reset all points. Enter = confirm.")
+            "Shift+click the root to add a point. Right-click a point to remove it.\n"
+            "Right-click elsewhere = reset all. Enter = confirm.")
         self.lbl_bottom.configure(
-            text="Drag=reshape  |  Add Point button=add a point  |  "
-                 "Right-click=reset all  |  Enter=confirm  |  Scroll=zoom")
-
-    def _toggle_edit_trace_add_point(self):
-        """Turn add-point mode on/off while editing a primary-root trace."""
-        on = not self.canvas._edit_trace_add_mode
-        self.canvas.set_edit_trace_add_mode(on)
-        if on:
-            self.sidebar.btn_add_point.configure(
-                text="Adding points (click to stop)", fg_color="#c0392b")
-            self.sidebar.set_status(
-                "Click on the root to add a point, then drag it into place.\n"
-                "Click 'Adding points' again when done.")
-        else:
-            self.sidebar.btn_add_point.configure(
-                text="Add Point", fg_color="#4f8a6b")
-            self.sidebar.set_status(
-                "Drag a point to reshape the root (top/tip stay fixed).\n"
-                "Right-click = reset all points. Enter = confirm.")
+            text="Drag=reshape  |  Shift+click root=add point  |  Right-click point=remove  |  "
+                 "Right-click elsewhere=reset all  |  Enter=confirm  |  Scroll=zoom")
 
     def _cancel_edit_trace(self):
         """Discard edits and return to review without changing the path."""
