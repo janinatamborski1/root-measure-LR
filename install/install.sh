@@ -5,7 +5,7 @@
 set -e
 
 APP_NAME="Root Measure LR"
-REPO="bellaarchibald/root-measure-LR"
+REPO="janinatamborski1/root-measure-LR"
 WORK_DIR="$HOME/.root-measure-lr-install"
 
 # Show errors on failure
