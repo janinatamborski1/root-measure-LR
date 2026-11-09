@@ -344,6 +344,10 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.btn_load_folder = ctk.CTkButton(
             b, text="Open or Drop Folder", command=app.load_folder)
         self.btn_load_folder.pack(pady=5, padx=15, fill="x")
+        self.btn_plot_project = ctk.CTkButton(
+            b, text="Plot a Project (parent folder)", fg_color="#4f8a6b",
+            command=app.plot_project_folder)
+        self.btn_plot_project.pack(pady=(0, 5), padx=15, fill="x")
 
         # ===== SECTION: SAVED SESSIONS =====
         self.sec_sessions = _Section(self, "SAVED SESSIONS")
@@ -524,6 +528,8 @@ class Sidebar(ctk.CTkScrollableFrame):
         self._geno_box_frame = ctk.CTkFrame(b, fg_color="transparent")
         self._geno_box_frame.pack(fill="x")
         self._geno_entries = []
+        self._plate_label_entries = []   # one 'plate number' box per plate
+        self._plate_label_auto = set()   # indices auto-filled from plate 1
         self._geno_num_boxes = 0
         self._rebuild_genotype_boxes(1)
 
@@ -654,12 +660,6 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.btn_edit_points = ctk.CTkButton(
             self._status_frame, text="Edit Points", fg_color="#4f8a6b",
             command=lambda: app._start_edit_trace())
-        # starts hidden
-
-        # Add Point button (shown only while editing points; toggles add mode)
-        self.btn_add_point = ctk.CTkButton(
-            self._status_frame, text="Add Point", fg_color="#4f8a6b",
-            command=lambda: app._toggle_edit_trace_add_point())
         # starts hidden
 
         # Trace mode checkboxes (radio-button behavior, freehand default)
@@ -817,6 +817,9 @@ class Sidebar(ctk.CTkScrollableFrame):
         # save current text from existing entries
         old_texts = [e.get().strip() for e in self._geno_entries]
         old_histories = [e.get_history() for e in self._geno_entries]
+        old_labels = [e.get().strip() for e in self._plate_label_entries]
+        self._plate_label_entries.clear()
+        self._plate_label_auto = set()
         # clear container
         for w in self._geno_box_frame.winfo_children():
             w.destroy()
@@ -824,6 +827,13 @@ class Sidebar(ctk.CTkScrollableFrame):
         b = self._geno_box_frame
 
         if num_plates == 1:
+            _lrow = ctk.CTkFrame(b, fg_color="transparent")
+            _lrow.pack(fill="x", padx=15, pady=(0, 2))
+            ctk.CTkLabel(_lrow, text="Plate number:",
+                         font=ctk.CTkFont(size=11)).pack(side="left")
+            _le = ctk.CTkEntry(_lrow, width=70, placeholder_text="e.g. 41")
+            _le.pack(side="left", padx=(4, 0))
+            self._plate_label_entries.append(_le)
             _label_with_tip(b, "Genotypes:",
                             "Comma-separated genotype names (left to right).",
                             font=ctk.CTkFont(size=11)).pack(padx=15, anchor="w")
@@ -860,6 +870,11 @@ class Sidebar(ctk.CTkScrollableFrame):
                 lbl = ctk.CTkLabel(row, text=f"Plate {pi + 1}:",
                                    font=ctk.CTkFont(size=11), width=50)
                 lbl.pack(side="left")
+                _le = ctk.CTkEntry(row, width=44, placeholder_text="#")
+                _le.pack(side="left", padx=(4, 0))
+                _le.bind("<KeyRelease>",
+                         lambda _e, _i=pi: self._on_plate_label_key(_i))
+                self._plate_label_entries.append(_le)
                 ph = _placeholders[pi] if pi < len(_placeholders) else "e.g. genotype names"
                 entry = _AutocompleteEntry(row, placeholder_text=ph)
                 entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
@@ -888,8 +903,45 @@ class Sidebar(ctk.CTkScrollableFrame):
                 if all_hist:
                     entry.set_history(list(all_hist))
 
+        # restore previously typed plate numbers
+        for _i, _t in enumerate(old_labels):
+            if _t and _i < len(self._plate_label_entries):
+                self._plate_label_entries[_i].insert(0, _t)
+
         self._geno_num_boxes = num_plates
         self.entry_genotypes = self._geno_entries[0]
+
+    def _on_plate_label_key(self, idx):
+        """Plate 1's number auto-fills the following plates (41, 42, 43...)
+        until the user types in one of them directly."""
+        ents = self._plate_label_entries
+        if idx == 0:
+            first = ents[0].get().strip()
+            if first.isdigit():
+                for i in range(1, len(ents)):
+                    if i in self._plate_label_auto or not ents[i].get().strip():
+                        ents[i].delete(0, 'end')
+                        ents[i].insert(0, str(int(first) + i))
+                        self._plate_label_auto.add(i)
+            elif not first:
+                for i in list(self._plate_label_auto):
+                    if i < len(ents):
+                        ents[i].delete(0, 'end')
+                self._plate_label_auto.clear()
+        else:
+            self._plate_label_auto.discard(idx)
+
+    def get_plate_labels(self):
+        """Per-plate numbers/labels typed by the user ('' if blank)."""
+        return [e.get().strip() for e in self._plate_label_entries]
+
+    def set_plate_labels(self, labels):
+        """Set per-plate labels (blank for any not given)."""
+        self._plate_label_auto = set()
+        for i, e in enumerate(self._plate_label_entries):
+            e.delete(0, 'end')
+            if labels and i < len(labels) and labels[i]:
+                e.insert(0, str(labels[i]))
 
     def get_genotypes_text(self):
         """Return combined genotype text from all boxes, comma-separated."""

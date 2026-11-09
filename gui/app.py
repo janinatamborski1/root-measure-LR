@@ -25,7 +25,8 @@ from plate_detection import _to_uint8, detect_plate_count
 
 from canvas import ImageCanvas, GROUP_MARKER_COLORS
 from sidebar import Sidebar
-from workflow import MeasurementMixin
+from workflow import MeasurementMixin, _reveal_in_file_manager
+from project import combine_project, find_project_subfolders, plot_project
 from session import save_session, load_session, restore_settings, \
     save_last_folder, get_last_folder, save_experiment_name, \
     get_experiment_name, save_persistent_settings, get_persistent_settings, \
@@ -517,7 +518,15 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         if not self.images:
             self.sidebar.sec_sessions.hide()
             self.sidebar.btn_load_folder.configure(text="Open Folder")
-            self.sidebar.set_status(f"No scans found in {self.folder.name}")
+            msg = f"No scans found in {self.folder.name}"
+            try:
+                subs = [s.name for s in find_project_subfolders(self.folder)]
+            except OSError:
+                subs = []
+            if subs:
+                msg += ("\nThis folder has subfolders. Open one of them to "
+                        "measure it, or use 'Plot a Project' to plot them together.")
+            self.sidebar.set_status(msg)
             return
 
         # Reset all experiment state for new folder
@@ -537,6 +546,49 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
             self.sidebar.populate_sessions(sessions)
         else:
             self.sidebar.sec_sessions.hide()
+
+    def plot_project_folder(self):
+        """Combine every subfolder of a chosen parent folder and plot them
+        together (same genotype name pooled across folders)."""
+        from tkinter import filedialog
+        parent = filedialog.askdirectory(
+            title="Select project folder (contains one subfolder per scan folder)")
+        self.lift()
+        self.focus_force()
+        if not parent:
+            return
+        parent = Path(parent)
+        exp = getattr(self, '_experiment_name', '') or ''
+        dlg = ctk.CTkInputDialog(
+            text="Experiment name used when measuring these folders\n"
+                 "(leave blank if you didn't enter one):",
+            title="Plot a Project")
+        answer = dlg.get_input()
+        if answer is None:
+            return
+        exp = answer.strip()
+        try:
+            res = combine_project(parent, data_dir, exp)
+            if res is None:
+                self.sidebar.set_status(
+                    f"No measured data found in the subfolders of {parent.name}"
+                    + (f" for experiment '{exp}'." if exp else "."))
+                return
+            raw_path, used, skipped = res
+            self.sidebar.set_status(f"Plotting {len(used)} folder(s)...")
+            self.update_idletasks()
+            plot_project(raw_path)
+            msg = (f"Project plotted: {len(used)} folder(s) combined.\n"
+                   f"Saved in {parent.name}/root_measure_lr/"
+                   f"{(exp + '/') if exp else ''}data")
+            if skipped:
+                msg += f"\nSkipped (no data): {', '.join(skipped)}"
+            self.sidebar.set_status(msg)
+            _reveal_in_file_manager(raw_path.parent)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.sidebar.set_status(f"Project plot error: {e}")
 
     def load_folder(self):
         from tkinter import filedialog
@@ -819,6 +871,8 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 cond = csv_cond
         if per_box:
             self.sidebar.set_genotypes_per_box(per_box)
+        # plate numbers are per scan: restore this image's own, else blank
+        self.sidebar.set_plate_labels(img_data.get('plate_labels'))
         if cond is not None:
             self.sidebar.entry_condition.delete(0, 'end')
             if cond:
@@ -1095,7 +1149,6 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         self.sidebar.btn_prev_plate.pack_forget()
         self.sidebar.btn_manual_trace.pack_forget()
         self.sidebar.btn_edit_points.pack_forget()
-        self.sidebar.btn_add_point.pack_forget()
         self.sidebar.hide_manual_trace_modes()
         self.sidebar.hide_review_toggles()
 
@@ -1376,7 +1429,11 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
 
         plate_to_geno = {}
         plate_to_cond = {}
+        plate_labels_list = self.sidebar.get_plate_labels()
+        plate_to_label = {}
         for i, plate_num in enumerate(plates_in_img):
+            if i < len(plate_labels_list):
+                plate_to_label[plate_num] = plate_labels_list[i]
             if i < len(per_box) and per_box[i]:
                 plate_to_geno[plate_num] = per_box[i]
             elif per_box:
@@ -1387,7 +1444,8 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 plate_to_cond[plate_num] = conditions[-1]
 
         try:
-            n = update_image_labels(csv_path, img_name, plate_to_geno, plate_to_cond)
+            n = update_image_labels(csv_path, img_name, plate_to_geno, plate_to_cond,
+                                    plate_to_label)
         except Exception as e:
             self.sidebar.set_status(f"Update failed: {e}")
             return
@@ -1404,6 +1462,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         # update per-image canvas data so subsequent loads stay in sync
         cd = self._image_canvas_data.setdefault(img_name, {})
         cd['genotypes_per_box'] = list(per_box)
+        cd['plate_labels'] = list(plate_labels_list)
         cd['condition'] = cond
 
         # regenerate tidy_data.csv so plots reflect the new labels next time
@@ -1487,6 +1546,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         if orig_image_path:
             self._stash_canvas()
         orig_per_box = self.sidebar.get_genotypes_per_box()
+        orig_plate_labels = self.sidebar.get_plate_labels()
         orig_cond = self.sidebar.entry_condition.get()
 
         # Resolve image names → paths
@@ -1511,6 +1571,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 cond = cd.get('condition')
                 if per_box:
                     self.sidebar.set_genotypes_per_box(per_box)
+                self.sidebar.set_plate_labels(cd.get('plate_labels'))
                 if cond is not None:
                     self.sidebar.entry_condition.delete(0, 'end')
                     if cond:
@@ -1529,6 +1590,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
 
         # Restore original sidebar labels and image
         self.sidebar.set_genotypes_per_box(orig_per_box)
+        self.sidebar.set_plate_labels(orig_plate_labels)
         self.sidebar.entry_condition.delete(0, 'end')
         if orig_cond:
             self.sidebar.entry_condition.insert(0, orig_cond)

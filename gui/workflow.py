@@ -1731,7 +1731,8 @@ class MeasurementMixin:
                 num_marks=self._get_num_marks(),
                 split_plate=gpp,
                 image_name=img_name,
-                group_to_plate=group_to_plate)
+                group_to_plate=group_to_plate,
+                plate_numbers=self.sidebar.get_plate_labels())
             self._plate_offset = new_plate_offset
             self._root_offset = new_root_offset
             if not silent:

@@ -316,6 +316,7 @@ def _collect_settings(sidebar):
         'experiment': sidebar.entry_experiment.get().strip(),
         'genotypes': sidebar.get_genotypes_text(),
         'genotypes_per_box': sidebar.get_genotypes_per_box(),
+        'plate_labels': sidebar.get_plate_labels(),
         'conditions': sidebar.entry_condition.get().strip(),
         'genotype_history': _merge_geno_history(sidebar._geno_entries),
         'condition_history': sidebar.entry_condition.get_history(),
@@ -366,6 +367,7 @@ def _collect_canvas(canvas, plate_thresholds=None, sidebar=None):
                                   for k, v in plate_thresholds.items()}
     if sidebar is not None:
         d['genotypes_per_box'] = sidebar.get_genotypes_per_box()
+        d['plate_labels'] = sidebar.get_plate_labels()
         d['condition'] = sidebar.entry_condition.get().strip()
     return d
 
@@ -410,6 +412,7 @@ def restore_settings(sidebar, settings):
         sidebar.entry_num_plates.insert(0, str(num_plates))
     # rebuild genotype boxes to match plate count before restoring text
     sidebar._rebuild_genotype_boxes(num_plates)
+    sidebar.set_plate_labels(settings.get('plate_labels'))
     sidebar.entry_experiment.delete(0, 'end')
     sidebar.entry_experiment.insert(0, settings.get('experiment', ''))
     # restore autocomplete history (prefer saved history, fall back to field values)
