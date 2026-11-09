@@ -89,11 +89,16 @@ def combine_project(parent, data_dir_fn, exp=''):
     return raw_path, used, skipped
 
 
-def plot_each_folder(parent, data_dir_fn, exp=''):
+def plot_each_folder(parent, data_dir_fn, exp='', skip=()):
     """Plot every measured subfolder on its own (data, plots and statistics
-    in that subfolder's own output folder). Returns (plotted, skipped) names."""
+    in that subfolder's own output folder). Folders in skip are left alone
+    (already plotted). Returns (plotted, skipped) names."""
     plotted, skipped = [], []
+    skip = {Path(s) for s in skip}
     for sub in find_project_subfolders(Path(parent)):
+        if sub in skip:
+            plotted.append(sub.name)
+            continue
         raw = data_dir_fn(sub, exp) / 'raw_data.csv'
         if not raw.exists():
             skipped.append(sub.name)

@@ -92,7 +92,6 @@ def sort_genotypes_wt_first(genotypes):
 
 
 # Crown root detection (crown roots start near the top of the primary root)
-CR_ZONE_CM = 1.5              # Search zone: this far along the primary root from its top
-CR_NEAR_CM = 0.5              # A separate root counts if it starts within this of the zone
-CR_MIN_LEN_CM = 0.5           # Min length of a crown root (filters noise and stubs)
-CR_MIN_SEPARATION_CM = 0.15   # Branch points closer than this count as one crown root
+CR_ZONE_CM = 4              # A crown root must leave the primary root within this distance of its top
+CR_MIN_LEN_CM = 3           # Min length of a crown root (filters stubs and small side roots)
+CR_MARK_CM = 1.5              # Marker sits this far along each crown root
