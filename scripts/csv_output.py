@@ -36,6 +36,8 @@ def _build_rows(results, plate_labels, plate_offset, root_offset,
             'LR_Density': round(r['lr_density'], 3) if r.get('lr_density') is not None else 'NA',
             'Warning': r.get('warning') or '',
         }
+        if r.get('cr_total') is not None:
+            row['CR_Total'] = r['cr_total']
 
         if plate_labels and i < len(point_plates):
             group_idx = point_plates[i]
@@ -84,7 +86,7 @@ def _raw_col_order(is_factorial, num_marks):
     if num_marks > 0:
         for seg_i in range(num_marks + 1):
             cols.append(f'Segment_{seg_i + 1}_cm')
-    cols.extend(['LR_Total', 'LR_Density'])
+    cols.extend(['LR_Total', 'LR_Density', 'CR_Total'])
     cols.extend(['Vector_cm', 'Tortuosity', 'Direction', 'Length_px', 'Warning'])
     return cols
 
@@ -119,6 +121,8 @@ def save_raw(df_new, csv_path, is_factorial, num_marks):
         if col not in col_order:
             col_order.append(col)
     df = df[col_order]
+    if 'CR_Total' in df.columns:  # whole numbers (blank where not counted)
+        df['CR_Total'] = pd.to_numeric(df['CR_Total'], errors='coerce').astype('Int64')
     tmp = csv_path.with_suffix('.tmp')
     df.to_csv(tmp, index=False)
     tmp.replace(csv_path)
