@@ -41,6 +41,7 @@ from image_processing import preprocess
 from root_tracing import find_root_tip, trace_root, build_plate_graph
 from utils import _compute_segments, _find_nearest_path_index
 from lateral_roots import detect_lateral_roots, classify_side
+from crown_roots import detect_crown_roots
 from skimage.morphology import skeletonize
 from csv_output import append_results_to_csv, save_metadata
 from plotting import plot_results, plot_segments_facet
@@ -1461,6 +1462,147 @@ class MeasurementMixin:
         mask = np.any(roi > 0, axis=2)
         img[dy:dy + ch, dx:dx + cw][mask] = roi[mask]
 
+    # --- Crown roots: auto-detected near the top of each plant, then corrected
+    # by hand; every point counts for the plant whose primary trace is nearest ---
+
+    def _apply_crown_counts(self, results):
+        """Set res['cr_total'] on each traced root from the crown-root points.
+        Recomputed on every save, so retraces re-assign correctly. Images where
+        crown roots were never counted keep no cr_total (CSV: blank)."""
+        pts = self.canvas._cr_points
+        if pts is None:
+            return
+        paths = {}
+        for i, r in enumerate(results):
+            p = r.get('path')
+            if r.get('method') not in ('skip', 'error') and p is not None \
+                    and len(p) >= 2:
+                paths[i] = np.asarray(p, dtype=float)
+        counts = {i: 0 for i in paths}
+        for (row, col, *_rest) in pts:
+            best, best_d = None, float('inf')
+            pt = np.array([row, col], dtype=float)
+            for i, p in paths.items():
+                step = max(1, len(p) // 200)
+                d = np.sqrt(((p[::step] - pt) ** 2).sum(axis=1)).min()
+                if d < best_d:
+                    best, best_d = i, d
+            if best is not None:
+                counts[best] += 1
+        for i, n in counts.items():
+            results[i]['cr_total'] = n
+
+    def start_count_cr(self):
+        """Count crown roots: auto-detect candidates the first time, then let
+        the user add and remove points by hand."""
+        if not hasattr(self, '_results') or not self._results:
+            if self.canvas._traces:
+                self._rebuild_results_from_traces()
+            else:
+                self.sidebar.set_status(
+                    "Trace the roots first, then count crown roots.")
+                return
+        self.canvas.clear_review()
+        self._hide_action_buttons()
+        if self.canvas._cr_points is not None:
+            self._enter_cr_mode()
+            return
+        self._ensure_plate_binaries(self._cr_autodetect)
+
+    def _cr_autodetect(self):
+        """Find crown-root candidates near the top of every traced plant."""
+        scale = self._scale_val
+        root_plates = self.canvas._root_plates
+        items = []
+        for ri, res in enumerate(self._results):
+            p = res.get('path')
+            if res.get('method') in ('skip', 'error') or p is None or len(p) < 2:
+                continue
+            pi = root_plates[ri] if ri < len(root_plates) else 0
+            items.append((pi, np.asarray(p)))
+        binaries = self._plate_binaries
+        skeletons = {}  # fresh per run: a cached skeleton could be a previous image's
+        default_binary = self._binary
+        self.sidebar.set_status(
+            "Looking for crown roots near the top of each plant...")
+
+        def work():
+            pts, errs = [], []
+            for pi in sorted({q for q, _ in items}):
+                binary = binaries.get(pi, default_binary)
+                if pi not in skeletons:
+                    skeletons[pi] = skeletonize(binary)
+                same = [p for q, p in items if q == pi]
+                for q, p in items:
+                    if q != pi:
+                        continue
+                    try:
+                        found = detect_crown_roots(
+                            binary, p, scale, skeletons[pi], same)
+                    except Exception as e:
+                        errs.append(str(e))
+                        continue
+                    pts += [(f['row'], f['col'], 'auto') for f in found]
+            return pts, errs
+
+        def done(result):
+            pts, errs = result
+            self.canvas._cr_points = pts
+            self._enter_cr_mode(error=errs[0] if errs else None)
+
+        self._run_in_background(work, done)
+
+    def _enter_cr_mode(self, error=None):
+        t2r = getattr(self, '_trace_to_result', None)
+        if t2r is not None:
+            self.canvas._trace_to_result = list(t2r)
+        self.canvas.set_mode(ImageCanvas.MODE_COUNT_CR,
+                             on_done=self._cr_confirm)
+        self.canvas._on_click_callback = self._show_cr_status
+        self.canvas.reset_view()
+        self._show_cr_status()
+        if error:
+            self.sidebar.set_status(
+                self.sidebar.lbl_status.cget("text") +
+                f"\nAuto-detection error: {error}")
+        self._show_action_frame()
+        self.sidebar.btn_done.configure(
+            text="Finish Crown Roots",
+            command=lambda: self.canvas._trigger_done())
+        self.sidebar.btn_done.pack(pady=(5, 0), padx=15, fill="x")
+        self.sidebar.btn_prev_plate.pack_forget()
+        self.canvas._redraw()
+
+    def _show_cr_status(self):
+        pts = self.canvas._cr_points or []
+        per = {}
+        for (row, col, *_rest) in pts:
+            ti = self.canvas.cr_owner_trace(row, col)
+            if ti is not None:
+                per[ti + 1] = per.get(ti + 1, 0) + 1
+        detail = "  ".join(f"#{k}:{v}" for k, v in sorted(per.items()))
+        self.sidebar.set_status(
+            "Crown roots (orange = auto-detected, yellow = added by you). "
+            "Click a root to add one; click a marker to remove it. Each goes "
+            "to the nearest plant.\n"
+            f"Crown roots: {len(pts)}" + (f"   ({detail})" if detail else "") +
+            "\nPress Enter when done.")
+        self.lbl_bottom.configure(
+            text="Click=add crown root  |  Click marker=remove  |  "
+                 "Right-click=undo  |  Enter=finish  |  Scroll=zoom  |  "
+                 "Space+drag=pan")
+
+    def _cr_confirm(self):
+        """Enter/Finish: apply crown-root counts and save like a normal finish."""
+        if self.canvas._cr_points is None:
+            self.canvas._cr_points = []
+        self._apply_crown_counts(self._results)
+        self._canvas_dirty = True
+        self.canvas._on_click_callback = None
+        self.canvas.set_mode(ImageCanvas.MODE_VIEW)
+        self._hide_action_buttons()
+        self._finish_measurement()
+
     def start_count_lr(self):
         """Re-enter lateral root counting from the sidebar button."""
         if not hasattr(self, '_results') or not self._results:
@@ -1654,6 +1796,7 @@ class MeasurementMixin:
     def _save_results(self, results, plates, scale, silent=False):
         """Save measurement results to CSV. If silent=True, don't update status."""
         from csv_output import get_offsets_from_csv
+        self._apply_crown_counts(results)
         folder = self.folder
         if not folder and self.image_path:
             folder = self.image_path.parent
@@ -1781,6 +1924,16 @@ class MeasurementMixin:
             # plot each segment column if present
             import pandas as _pd
             _cols = list(_pd.read_csv(raw_path, nrows=0).columns)
+            if 'CR_Total' in _cols and _pd.read_csv(
+                    raw_path, usecols=['CR_Total'])['CR_Total'].notna().any():
+                s = plot_results(raw_path,
+                                 value_col='CR_Total',
+                                 ylabel='Crown roots per plant',
+                                 csv_format='R',
+                                 genotype_colors=geno_colors,
+                                 custom_colors=custom_colors)
+                if s:
+                    summaries.append(s)
             if 'LR_Density' in _cols:
                 s = plot_results(raw_path,
                                  value_col='LR_Density',
@@ -1814,7 +1967,7 @@ class MeasurementMixin:
             self.sidebar.set_status(
                 self.sidebar.lbl_status.cget("text") +
                 f"\nSaved tidy_data.csv, plot, and statistics.txt")
-            _reveal_in_file_manager(data_dir(folder, exp))
+            self.sidebar.show_open_output(data_dir(folder, exp))
         except Exception as e:
             self.sidebar.set_status(
                 self.sidebar.lbl_status.cget("text") +

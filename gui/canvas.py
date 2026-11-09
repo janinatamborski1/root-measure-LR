@@ -42,6 +42,7 @@ class ImageCanvas(ctk.CTkFrame):
     MODE_RECLICK = "reclick"
     MODE_MANUAL_TRACE = "manual_trace"
     MODE_COUNT_LR = "count_lr"
+    MODE_COUNT_CR = "count_cr"
     MODE_EDIT_TRACE = "edit_trace"
     EDIT_TRACE_NUM_HANDLES = 18  # evenly-spaced draggable control points
 
@@ -102,6 +103,11 @@ class ImageCanvas(ctk.CTkFrame):
         self._lr_plate_bounds = None  # (r1,r2,c1,c2) whole plate, for zoom-out toggle
         self._lr_zoomed_to_plate = False
         self._lr_results = {}      # {root_index: {'total':n,'points':[...]}}, persists across rebuilds
+        # crown roots: (row, col, origin) points for the whole image, origin is
+        # 'auto' or 'manual'. None = never counted, [] = counted, zero. Each
+        # point belongs to the plant whose primary trace is nearest.
+        self._cr_points = None
+        self._cr_marker_ids = []
 
         # edit-trace state (drag control points to reshape an existing path)
         self._edit_trace_path = None        # Nx2 original path being edited
@@ -319,6 +325,42 @@ class ImageCanvas(ctk.CTkFrame):
         id2 = self.canvas.create_line(cx - r, cy + r, cx + r, cy - r,
                                       fill=color, width=2)
         self._lr_marker_ids.extend([id1, id2])
+
+    # --- Crown roots (points matched to the nearest plant's primary trace) ---
+
+    def set_cr_points(self, pts):
+        """Restore crown-root points from saved state (None = not counted)."""
+        if pts is None:
+            self._cr_points = None
+        else:
+            self._cr_points = [(p[0], p[1], p[2] if len(p) > 2 else 'manual')
+                               for p in pts]
+
+    def get_cr_points(self):
+        return None if self._cr_points is None else list(self._cr_points)
+
+    def clear_cr_points(self):
+        self._cr_points = None
+        self._cr_marker_ids.clear()
+
+    def cr_owner_trace(self, row, col):
+        """Index of the trace (plant) nearest to a crown-root point."""
+        return self._find_nearest_trace(col, row, threshold=float('inf'))
+
+    def _draw_cr_point(self, row, col, origin):
+        cx, cy = self.image_to_canvas(col, row)
+        r = 7
+        color = "#ffa500" if origin == 'auto' else "#ffe000"
+        pid = self.canvas.create_polygon(
+            cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy,
+            fill=color, outline="black", width=1)
+        self._cr_marker_ids.append(pid)
+        ti = self.cr_owner_trace(row, col)
+        if ti is not None:
+            tid = self.canvas.create_text(
+                cx + 10, cy - 8, text=f"#{ti + 1}", fill=color,
+                anchor="w", font=("Helvetica", 9, "bold"))
+            self._cr_marker_ids.append(tid)
 
     def _find_nearest_lr_point(self, img_col, img_row, threshold=15):
         """Find the index of the LR point nearest to an image coordinate."""
@@ -925,6 +967,9 @@ class ImageCanvas(ctk.CTkFrame):
         if self._mode == self.MODE_COUNT_LR:
             for (row, col, side, origin) in self._lr_points:
                 self._draw_lr_point(row, col, side, origin)
+        if self._mode == self.MODE_COUNT_CR and self._cr_points:
+            for (row, col, origin) in self._cr_points:
+                self._draw_cr_point(row, col, origin)
         if self._mode == self.MODE_EDIT_TRACE:
             self._draw_edit_trace_overlay()
 
@@ -1245,6 +1290,12 @@ class ImageCanvas(ctk.CTkFrame):
                 ("Enter", "Confirm and continue"),
                 ("Right-click", "Undo last added point"),
             ],
+            self.MODE_COUNT_CR: [
+                ("Click", "Add a crown root (goes to the nearest plant)"),
+                ("Click marker", "Remove that crown root"),
+                ("Enter", "Confirm and finish"),
+                ("Right-click", "Undo last added point"),
+            ],
             self.MODE_EDIT_TRACE: [
                 ("Drag a point", "Reshape the path near that point"),
                 ("Shift+click the root", "Add a new point there"),
@@ -1262,6 +1313,7 @@ class ImageCanvas(ctk.CTkFrame):
             self.MODE_RECLICK: "Re-click",
             self.MODE_MANUAL_TRACE: "Manual Trace",
             self.MODE_COUNT_LR: "Count Lateral Roots",
+            self.MODE_COUNT_CR: "Count Crown Roots",
             self.MODE_EDIT_TRACE: "Edit Points",
         }
 
@@ -1606,6 +1658,24 @@ class ImageCanvas(ctk.CTkFrame):
             self._mark_marker_ids.extend([rid, tid])
             if self._on_click_callback:
                 self._on_click_callback()
+        elif self._mode == self.MODE_COUNT_CR:
+            col, row = self.canvas_to_image(sx, sy)
+            if self._cr_points is None:
+                self._cr_points = []
+            # a click on an existing marker removes it (same screen-size rule as LR)
+            rm_thresh = 8 / self._scale if self._scale > 0 else 15
+            best, best_d = None, rm_thresh
+            for i, (r_, c_, _o) in enumerate(self._cr_points):
+                d = ((r_ - row) ** 2 + (c_ - col) ** 2) ** 0.5
+                if d < best_d:
+                    best, best_d = i, d
+            if best is not None:
+                self._cr_points.pop(best)
+            else:
+                self._cr_points.append((row, col, 'manual'))
+            self._redraw()
+            if self._on_click_callback:
+                self._on_click_callback()
         elif self._mode == self.MODE_COUNT_LR:
             col, row = self.canvas_to_image(sx, sy)
             # remove-radius is fixed on screen (marker half-width is 6px), not
@@ -1884,6 +1954,12 @@ class ImageCanvas(ctk.CTkFrame):
             for _ in range(2):
                 if self._mark_marker_ids:
                     self.canvas.delete(self._mark_marker_ids.pop())
+            self._redraw()
+            if self._on_click_callback:
+                self._on_click_callback()
+            return True
+        elif self._mode == self.MODE_COUNT_CR and self._cr_points:
+            self._cr_points.pop()
             self._redraw()
             if self._on_click_callback:
                 self._on_click_callback()

@@ -348,11 +348,21 @@ class Sidebar(ctk.CTkScrollableFrame):
             b, text="Plot a Project (parent folder)", fg_color="#4f8a6b",
             command=app.plot_project_folder)
         self.btn_plot_project.pack(pady=(0, 5), padx=15, fill="x")
+        # appears after plotting; opens the folder the results were saved in
+        self.btn_open_output = ctk.CTkButton(
+            b, text="Open folder", fg_color="#2b5797",
+            command=lambda: app.open_output_folder())
+        self._open_output_path = None
 
         # ===== SECTION: SAVED SESSIONS =====
         self.sec_sessions = _Section(self, "SAVED SESSIONS")
         # hidden until populated
         self._session_buttons = []
+
+        # ===== SECTION: PROJECT (subfolders of an opened parent folder) =====
+        self.sec_project = _Section(self, "PROJECT")
+        # hidden until a parent folder is opened
+        self._project_buttons = []
 
         # ===== SECTION: IMAGES =====
         self.sec_images = _Section(self, "SCANNED PLATES")
@@ -603,6 +613,14 @@ class Sidebar(ctk.CTkScrollableFrame):
             state="disabled", fg_color=self._step_color_idle)
         self.btn_count_lr.pack(pady=3, padx=15, fill="x")
 
+        # Crown roots: separate from lateral roots (they start near the top of
+        # the primary root). Auto-detected, then corrected by hand. Always
+        # enabled; the handler checks that traces exist.
+        self.btn_count_cr = ctk.CTkButton(
+            b, text="Count Crown Roots", command=app.start_count_cr,
+            fg_color="#4f8a6b")
+        self.btn_count_cr.pack(pady=3, padx=15, fill="x")
+
         # Review toggle buttons (hidden by default, shown in review mode)
         self._review_toggles_frame = ctk.CTkFrame(b, fg_color="transparent")
         self.btn_toggle_zoom = ctk.CTkButton(
@@ -622,7 +640,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         # --- Ordered section list (for pack-order preservation) ---
         # sec_sessions is excluded — it always packs after _status_frame
         self._section_order = [
-            self.sec_folder, self.sec_images,
+            self.sec_folder, self.sec_project, self.sec_images,
             self.sec_settings, self.sec_experiment, self.sec_workflow,
         ]
 
@@ -1243,6 +1261,70 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.sec_sessions.show()
         self.sec_sessions.expand()
 
+    def populate_project(self, entries, current=None):
+        """List the subfolders of an opened parent folder.
+        entries = list of (Path, n_measured, n_total). Click one to open it."""
+        for w in self._project_buttons:
+            w.destroy()
+        self._project_buttons.clear()
+        b = self.sec_project.body
+        for path, n_done, n_total in entries:
+            is_cur = current is not None and path == current
+            frame = ctk.CTkFrame(
+                b, fg_color="#2b5797" if is_cur else "gray20",
+                corner_radius=6, cursor="hand2")
+            frame.pack(fill="x", padx=15, pady=2)
+            ctk.CTkLabel(frame, text=path.name,
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color="white").pack(padx=10, pady=(5, 0), anchor="w")
+            ctk.CTkLabel(frame, text=f"{n_done}/{n_total} scans measured",
+                         font=ctk.CTkFont(size=10),
+                         text_color="gray70").pack(padx=10, pady=(0, 5), anchor="w")
+            for w in [frame] + list(frame.winfo_children()):
+                w.bind("<Button-1>",
+                       lambda e, p=path: self.app.open_project_subfolder(p))
+            self._project_buttons.append(frame)
+        btn = ctk.CTkButton(
+            b, text="Plot project (each folder + combined)", fg_color="#4f8a6b",
+            command=lambda: self.app.plot_current_project())
+        btn.pack(fill="x", padx=15, pady=(6, 4))
+        self._project_buttons.append(btn)
+        self.sec_project.show()
+        self.sec_project.expand()
+
+    def hide_project(self):
+        self.sec_project.hide()
+
+    def show_open_output(self, path):
+        """Show an 'Open folder' button for the folder just plotted into."""
+        self._open_output_path = path
+        if not self.btn_open_output.winfo_manager():
+            self.btn_open_output.pack(pady=(0, 5), padx=15, fill="x",
+                                      after=self.btn_plot_project)
+
+    def hide_open_output(self):
+        self._open_output_path = None
+        self.btn_open_output.pack_forget()
+
+    def show_project(self, project_name, entries):
+        """A parent folder was opened: list its subfolders instead of scans."""
+        self.btn_load_folder.configure(text="Change Folder")
+        if self._image_list_frame is not None:
+            self._image_list_frame.destroy()
+            self._image_list_frame = None
+        self.btn_finish_plot.pack_forget()
+        self.sec_sessions.hide()
+        self.sec_images.hide()
+        self.sec_settings.hide()
+        self.sec_experiment.hide()
+        self.sec_workflow.hide()
+        self.app._hide_action_buttons()
+        self.sec_folder.expand()
+        self.sec_folder._summary.configure(text=project_name)
+        self.populate_project(entries)
+        self.set_status("Project folder opened. Click a subfolder to "
+                        "measure it, or plot the whole project.")
+
     def _delete_session(self, folder, experiment):
         """Delete a session after user confirmation."""
         from tkinter import messagebox
@@ -1372,6 +1454,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         self._populate_image_list(images, processed)
         self.sec_folder.expand()
         self.sec_folder._summary.configure(text=folder_name)
+        self.app._show_project_list()
         # hide later sections
         self.sec_images.hide()
         self.sec_settings.hide()
@@ -1389,6 +1472,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         """Phase 2: image selected — show settings, collapse folder."""
         self.btn_finish_plot.pack_forget()
         self.sec_sessions.hide()
+        self.sec_project.hide()
         self.sec_folder.collapse(summary=image_name)
         self.entry_dpi.delete(0, "end")
         self.entry_dpi.insert(0, f"{dpi} dpi")
