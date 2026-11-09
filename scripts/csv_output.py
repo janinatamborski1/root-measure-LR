@@ -5,7 +5,7 @@ from config import sort_genotypes_wt_first
 
 def _build_rows(results, plate_labels, plate_offset, root_offset,
                 point_plates, num_marks, split_plate, image_name='',
-                group_to_plate=None):
+                group_to_plate=None, plate_numbers=None):
     """Build list of row dicts from measurement results."""
     labels = plate_labels.values() if isinstance(plate_labels, dict) else plate_labels
     is_factorial = plate_labels and any(
@@ -44,6 +44,11 @@ def _build_rows(results, plate_labels, plate_offset, root_offset,
                 row['Plate'] = plate_offset + local_plate + 1
                 genotype, condition = plate_labels[group_idx]
                 row['Genotype'] = genotype
+                if plate_numbers:
+                    _pi = group_idx[0] if isinstance(group_idx, tuple) else group_idx
+                    if isinstance(_pi, int) and _pi < len(plate_numbers) \
+                            and plate_numbers[_pi]:
+                        row['Plate_Label'] = str(plate_numbers[_pi])
                 if is_factorial:
                     row['Condition'] = condition or ''
 
@@ -71,11 +76,11 @@ def _build_rows(results, plate_labels, plate_offset, root_offset,
 def _raw_col_order(is_factorial, num_marks):
     """Standard column order for raw_data.csv."""
     if is_factorial:
-        cols = ['Root_ID', 'Image', 'Plate', 'Genotype', 'Plant_ID',
-                'Condition', 'Length_cm']
+        cols = ['Root_ID', 'Image', 'Plate', 'Plate_Label', 'Genotype',
+                'Plant_ID', 'Condition', 'Length_cm']
     else:
-        cols = ['Root_ID', 'Image', 'Plate', 'Genotype', 'Plant_ID',
-                'Length_cm']
+        cols = ['Root_ID', 'Image', 'Plate', 'Plate_Label', 'Genotype',
+                'Plant_ID', 'Length_cm']
     if num_marks > 0:
         for seg_i in range(num_marks + 1):
             cols.append(f'Segment_{seg_i + 1}_cm')
@@ -89,7 +94,7 @@ def save_raw(df_new, csv_path, is_factorial, num_marks):
     col_order = _raw_col_order(is_factorial, num_marks)
 
     if csv_path.exists():
-        df_existing = pd.read_csv(csv_path)
+        df_existing = pd.read_csv(csv_path, dtype={'Plate_Label': str})
         # remove old rows for this image (replace on re-measure)
         if 'Image' in df_existing.columns and 'Image' in df_new.columns:
             image_name = df_new['Image'].iloc[0] if len(df_new) > 0 else ''
@@ -134,7 +139,7 @@ def generate_tidy(raw_path, tidy_path, csv_format='R'):
     """
     if not raw_path.exists():
         return
-    df = pd.read_csv(raw_path)
+    df = pd.read_csv(raw_path, dtype={'Plate_Label': str})
     if df.empty:
         return
 
@@ -322,7 +327,7 @@ def get_offsets_from_csv(csv_path, exclude_image=''):
 def append_results_to_csv(results, csv_path, plates, plate_labels, plate_offset,
                           root_offset, point_plates, num_marks=0,
                           split_plate=False, image_name='',
-                          group_to_plate=None):
+                          group_to_plate=None, plate_numbers=None):
     """Append measurements to raw_data.csv.
 
     Returns:
@@ -331,7 +336,7 @@ def append_results_to_csv(results, csv_path, plates, plate_labels, plate_offset,
     rows, is_factorial = _build_rows(
         results, plate_labels, plate_offset, root_offset,
         point_plates, num_marks, split_plate, image_name=image_name,
-        group_to_plate=group_to_plate)
+        group_to_plate=group_to_plate, plate_numbers=plate_numbers)
 
     df_new = pd.DataFrame(rows)
     save_raw(df_new, csv_path, is_factorial, num_marks)
@@ -342,7 +347,8 @@ def append_results_to_csv(results, csv_path, plates, plate_labels, plate_offset,
     return new_plate_offset, new_root_offset
 
 
-def update_image_labels(csv_path, image_name, plate_to_genotype, plate_to_condition):
+def update_image_labels(csv_path, image_name, plate_to_genotype, plate_to_condition,
+                        plate_to_label=None):
     """Rewrite Genotype/Condition in raw_data.csv for rows matching image_name.
 
     plate_to_genotype: dict mapping global Plate number -> genotype string.
@@ -354,7 +360,7 @@ def update_image_labels(csv_path, image_name, plate_to_genotype, plate_to_condit
     """
     if not csv_path.exists():
         return 0
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, dtype={'Plate_Label': str})
     if 'Image' not in df.columns:
         return 0
     mask = df['Image'] == image_name
@@ -368,6 +374,13 @@ def update_image_labels(csv_path, image_name, plate_to_genotype, plate_to_condit
         for plate_num, cond in plate_to_condition.items():
             sub = mask & (df['Plate'] == plate_num)
             df.loc[sub, 'Condition'] = cond
+    if plate_to_label and 'Plate' in df.columns:
+        if 'Plate_Label' not in df.columns:
+            df.insert(list(df.columns).index('Plate') + 1, 'Plate_Label', '')
+        df['Plate_Label'] = df['Plate_Label'].astype(object)
+        for plate_num, label in plate_to_label.items():
+            sub = mask & (df['Plate'] == plate_num)
+            df.loc[sub, 'Plate_Label'] = label
     tmp = csv_path.with_suffix('.tmp')
     df.to_csv(tmp, index=False)
     tmp.replace(csv_path)
