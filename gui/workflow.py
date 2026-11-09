@@ -197,6 +197,7 @@ class MeasurementMixin:
         self.sidebar.btn_select_plates.configure(state="disabled")
         self.sidebar.btn_click_roots.configure(state="disabled")
         self.sidebar.btn_count_lr.configure(state="disabled")
+        self.sidebar.btn_count_cr.configure(state="disabled")
         self.sidebar.btn_review.configure(state="disabled")
         self.sidebar.set_step(2)
         self.update()
@@ -408,8 +409,9 @@ class MeasurementMixin:
             i for i in all_lr_root_indices
             if (root_plates[i] if i < len(root_plates) else 0) in selected_plates]
         self._lr_idx = 0
+        self._cr_after_lr = True   # crown roots are the last step of a normal run
         if not self._lr_root_indices:
-            self._finish_measurement()
+            self._after_lr_counting()
             return
         self._lr_skeletons = {}  # per-plate cache — skeletonizing is expensive
 
@@ -664,6 +666,15 @@ class MeasurementMixin:
         else:
             self.canvas.clear_lr_points()
             self._hide_action_buttons()
+            self._after_lr_counting()
+
+    def _after_lr_counting(self):
+        """Lateral roots are done: on a normal run continue to the last step,
+        crown roots; after a lateral-root re-count just finish."""
+        if getattr(self, '_cr_after_lr', False):
+            self._cr_after_lr = False
+            self.start_count_cr()
+        else:
             self._finish_measurement()
 
     def _lr_go_back(self):
@@ -684,6 +695,7 @@ class MeasurementMixin:
         self.sidebar.btn_click_roots.configure(state="normal")
         self.sidebar.btn_measure.configure(state="normal")
         self.sidebar.btn_count_lr.configure(state="normal")
+        self.sidebar.btn_count_cr.configure(state="normal")
         self.sidebar.btn_review.configure(state="normal")
         # sync trace-to-result mapping so canvas review numbering is correct
         self.canvas._trace_to_result = list(self._trace_to_result)
@@ -1556,6 +1568,7 @@ class MeasurementMixin:
         t2r = getattr(self, '_trace_to_result', None)
         if t2r is not None:
             self.canvas._trace_to_result = list(t2r)
+        self.sidebar.set_step(5)
         self.canvas.set_mode(ImageCanvas.MODE_COUNT_CR,
                              on_done=self._cr_confirm)
         self.canvas._on_click_callback = self._show_cr_status
@@ -1751,6 +1764,7 @@ class MeasurementMixin:
         self.sidebar.btn_click_roots.configure(state="normal")
         self.sidebar.btn_measure.configure(state="normal")
         self.sidebar.btn_count_lr.configure(state="normal")
+        self.sidebar.btn_count_cr.configure(state="normal")
         self.sidebar.btn_review.configure(state="normal")
 
         if self.image_path:

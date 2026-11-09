@@ -344,10 +344,6 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.btn_load_folder = ctk.CTkButton(
             b, text="Open or Drop Folder", command=app.load_folder)
         self.btn_load_folder.pack(pady=5, padx=15, fill="x")
-        self.btn_plot_project = ctk.CTkButton(
-            b, text="Plot a Project (parent folder)", fg_color="#4f8a6b",
-            command=app.plot_project_folder)
-        self.btn_plot_project.pack(pady=(0, 5), padx=15, fill="x")
         # appears after plotting; opens the folder the results were saved in
         self.btn_open_output = ctk.CTkButton(
             b, text="Open folder", fg_color="#2b5797",
@@ -613,12 +609,11 @@ class Sidebar(ctk.CTkScrollableFrame):
             state="disabled", fg_color=self._step_color_idle)
         self.btn_count_lr.pack(pady=3, padx=15, fill="x")
 
-        # Crown roots: separate from lateral roots (they start near the top of
-        # the primary root). Auto-detected, then corrected by hand. Always
-        # enabled; the handler checks that traces exist.
+        # Crown roots: the last step. Auto-detected near the top of each plant,
+        # then corrected by hand.
         self.btn_count_cr = ctk.CTkButton(
-            b, text="Count Crown Roots", command=app.start_count_cr,
-            fg_color="#4f8a6b")
+            b, text="5. Count Crown Roots", command=app.start_count_cr,
+            state="disabled", fg_color=self._step_color_idle)
         self.btn_count_cr.pack(pady=3, padx=15, fill="x")
 
         # Review toggle buttons (hidden by default, shown in review mode)
@@ -1179,10 +1174,11 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.lbl_status.configure(text=text)
 
     def set_step(self, step):
-        """Highlight the current workflow step (1-4). Previous steps turn green."""
+        """Highlight the current workflow step (1-5). Previous steps turn green."""
         buttons = [
             self.btn_click_roots,
             self.btn_measure, self.btn_review, self.btn_count_lr,
+            self.btn_count_cr,
         ]
         for i, btn in enumerate(buttons):
             num = i + 1
@@ -1284,11 +1280,12 @@ class Sidebar(ctk.CTkScrollableFrame):
                 w.bind("<Button-1>",
                        lambda e, p=path: self.app.open_project_subfolder(p))
             self._project_buttons.append(frame)
-        btn = ctk.CTkButton(
-            b, text="Plot project (each folder + combined)", fg_color="#4f8a6b",
-            command=lambda: self.app.plot_current_project())
-        btn.pack(fill="x", padx=15, pady=(6, 4))
-        self._project_buttons.append(btn)
+        hint = ctk.CTkLabel(
+            b, text="Finish & Plot also plots every measured folder\n"
+                    "separately and all folders combined.",
+            font=ctk.CTkFont(size=10), text_color="gray70", justify="left")
+        hint.pack(fill="x", padx=15, pady=(6, 4), anchor="w")
+        self._project_buttons.append(hint)
         self.sec_project.show()
         self.sec_project.expand()
 
@@ -1300,7 +1297,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         self._open_output_path = path
         if not self.btn_open_output.winfo_manager():
             self.btn_open_output.pack(pady=(0, 5), padx=15, fill="x",
-                                      after=self.btn_plot_project)
+                                      after=self.btn_load_folder)
 
     def hide_open_output(self):
         self._open_output_path = None
@@ -1605,6 +1602,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.btn_click_roots.configure(state="normal")
         self.btn_measure.configure(state="disabled")
         self.btn_count_lr.configure(state="disabled")
+        self.btn_count_cr.configure(state="disabled")
         self.btn_review.configure(state="disabled")
         self.set_step(1)
         self.set_status("Ready. Click roots to begin.")

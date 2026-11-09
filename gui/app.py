@@ -476,6 +476,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                     self.sidebar.btn_click_roots.configure(state="normal")
                     self.sidebar.btn_measure.configure(state="normal")
                     self.sidebar.btn_count_lr.configure(state="normal")
+                    self.sidebar.btn_count_cr.configure(state="normal")
                     self.sidebar.btn_review.configure(state="normal")
                     self._hide_action_buttons()
                     self._show_action_frame()
@@ -595,40 +596,19 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         """Open one subfolder of the current project for measuring."""
         self._open_folder(path)
 
-    def plot_current_project(self):
-        """Plot every measured subfolder of the open project together."""
-        if self._project_root is not None:
-            self._plot_project(self._project_root)
-
-    def plot_project_folder(self):
-        """Pick a parent folder, then combine and plot its subfolders."""
-        from tkinter import filedialog
-        parent = filedialog.askdirectory(
-            title="Select project folder (contains one subfolder per scan folder)")
-        self.lift()
-        self.focus_force()
-        if not parent:
-            return
-        self._plot_project(Path(parent))
-
-    def _plot_project(self, parent):
-        """Combine every subfolder of a parent folder and plot them
-        together (same genotype name pooled across folders)."""
+    def _plot_project(self, parent, exp=None, skip=()):
+        """Plot every measured subfolder of a parent folder on its own, then
+        combine them all (same genotype name pooled across folders). Runs
+        after Finish & Plot when a parent folder is open."""
         parent = Path(parent)
-        exp = getattr(self, '_experiment_name', '') or ''
-        dlg = ctk.CTkInputDialog(
-            text="Experiment name used when measuring these folders\n"
-                 "(leave blank if you didn't enter one):",
-            title="Plot a Project")
-        answer = dlg.get_input()
-        if answer is None:
-            return
-        exp = answer.strip()
+        if exp is None:
+            exp = getattr(self, '_experiment_name', '') or ''
+        exp = exp.strip()
         where = f"{parent.name}/root_measure_lr/{(exp + '/') if exp else ''}data"
         try:
             self.sidebar.set_status("Plotting each folder...")
             self.update_idletasks()
-            plotted, no_data = plot_each_folder(parent, data_dir, exp)
+            plotted, no_data = plot_each_folder(parent, data_dir, exp, skip=skip)
             res = combine_project(parent, data_dir, exp)
             if res is None:
                 self.sidebar.set_status(
@@ -985,6 +965,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         self.sidebar.btn_click_roots.configure(state="normal")
         self.sidebar.btn_measure.configure(state="normal")
         self.sidebar.btn_count_lr.configure(state="normal")
+        self.sidebar.btn_count_cr.configure(state="normal")
         self.sidebar.btn_review.configure(state="normal")
         # Restore per-plate threshold UI if plates exist
         # Prefer per-image thresholds over global session thresholds
@@ -1566,6 +1547,12 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 f"\nRecovery error: {e}")
         if self.sidebar.var_plot.get():
             self._run_plot()
+            # a parent folder is open: also plot all its folders, each on its
+            # own and combined (this folder was just plotted with your colors)
+            if self._project_root is not None and self.folder is not None:
+                self._plot_project(self._project_root,
+                                   exp=getattr(self, '_experiment_name', '') or '',
+                                   skip=[self.folder])
         # save final session state (keeps session visible on next launch)
         self._auto_save()
         self.sidebar.set_status(
@@ -1719,6 +1706,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         self.sidebar.btn_click_roots.configure(state="disabled")
         self.sidebar.btn_measure.configure(state="disabled")
         self.sidebar.btn_count_lr.configure(state="disabled")
+        self.sidebar.btn_count_cr.configure(state="disabled")
         self.sidebar.btn_review.configure(state="disabled")
         self._hide_action_buttons()
         self._show_action_frame()
@@ -1843,6 +1831,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 self._register_genotype(name)
         self.sidebar.btn_measure.configure(state="disabled")
         self.sidebar.btn_count_lr.configure(state="disabled")
+        self.sidebar.btn_count_cr.configure(state="disabled")
         self.sidebar.btn_review.configure(state="disabled")
         self._hide_action_buttons()
         self._show_action_frame()
