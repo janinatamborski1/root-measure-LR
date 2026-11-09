@@ -1180,10 +1180,11 @@ class MeasurementMixin:
         self.sidebar.btn_prev_plate.pack(pady=(3, 0), padx=15, fill="x")
         self.sidebar.set_status(
             "Drag a point to reshape the root (top/tip stay fixed).\n"
-            "Right-click = reset all points. Enter = confirm.")
+            "Shift+click the root to add a point. Right-click a point to remove it.\n"
+            "Right-click elsewhere = reset all. Enter = confirm.")
         self.lbl_bottom.configure(
-            text="Drag=reshape  |  Right-click=reset all  |  "
-                 "Enter=confirm  |  Scroll=zoom")
+            text="Drag=reshape  |  Shift+click root=add point  |  Right-click point=remove  |  "
+                 "Right-click elsewhere=reset all  |  Enter=confirm  |  Scroll=zoom")
 
     def _cancel_edit_trace(self):
         """Discard edits and return to review without changing the path."""
@@ -1730,7 +1731,8 @@ class MeasurementMixin:
                 num_marks=self._get_num_marks(),
                 split_plate=gpp,
                 image_name=img_name,
-                group_to_plate=group_to_plate)
+                group_to_plate=group_to_plate,
+                plate_numbers=self.sidebar.get_plate_labels())
             self._plate_offset = new_plate_offset
             self._root_offset = new_root_offset
             if not silent:
@@ -1812,7 +1814,7 @@ class MeasurementMixin:
             self.sidebar.set_status(
                 self.sidebar.lbl_status.cget("text") +
                 f"\nSaved tidy_data.csv, plot, and statistics.txt")
-            _reveal_in_file_manager(data_dir(folder, exp))
+            self.sidebar.show_open_output(data_dir(folder, exp))
         except Exception as e:
             self.sidebar.set_status(
                 self.sidebar.lbl_status.cget("text") +
