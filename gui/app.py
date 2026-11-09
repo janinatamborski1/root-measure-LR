@@ -589,8 +589,22 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         if root is not None and self.folder is not None \
                 and self.folder.parent == root:
             self.sidebar.populate_project(self._project_entries(), self.folder)
+            self.sidebar.show_back_to_project(root.name, self.folder.name)
         else:
             self.sidebar.hide_project()
+
+    def back_to_project(self):
+        """Leave the current subfolder and show the project's folder list again.
+        Whatever is already measured is kept; the current picture is saved as is."""
+        root = self._project_root
+        if root is None:
+            return
+        try:
+            self._stash_canvas()
+            self._auto_save()
+        except Exception as e:
+            print(f"[back_to_project] save error: {e}")
+        self._open_folder(root)
 
     def open_project_subfolder(self, path):
         """Open one subfolder of the current project for measuring."""

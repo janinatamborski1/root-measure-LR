@@ -344,6 +344,8 @@ class Sidebar(ctk.CTkScrollableFrame):
         self.btn_load_folder = ctk.CTkButton(
             b, text="Open or Drop Folder", command=app.load_folder)
         self.btn_load_folder.pack(pady=5, padx=15, fill="x")
+        # in a project: go back up to the parent folder to pick another subfolder
+        self._crumb_frame = ctk.CTkFrame(b, fg_color="transparent")
         # appears after plotting; opens the folder the results were saved in
         self.btn_open_output = ctk.CTkButton(
             b, text="Open folder", fg_color="#2b5797",
@@ -1291,6 +1293,7 @@ class Sidebar(ctk.CTkScrollableFrame):
 
     def hide_project(self):
         self.sec_project.hide()
+        self.hide_back_to_project()
 
     def show_open_output(self, path):
         """Show an 'Open folder' button for the folder just plotted into."""
@@ -1298,6 +1301,29 @@ class Sidebar(ctk.CTkScrollableFrame):
         if not self.btn_open_output.winfo_manager():
             self.btn_open_output.pack(pady=(0, 5), padx=15, fill="x",
                                       after=self.btn_load_folder)
+
+    def show_back_to_project(self, project_name, folder_name):
+        """Path line at the very top of the FOLDER section: the parent folder
+        (click it to go back and pick another subfolder) > the open subfolder."""
+        for w in self._crumb_frame.winfo_children():
+            w.destroy()
+        up = ctk.CTkLabel(self._crumb_frame, text=project_name,
+                          font=ctk.CTkFont(size=12, weight="bold"),
+                          text_color="#7b8cff", cursor="hand2")
+        up.pack(side="left")
+        up.bind("<Button-1>", lambda e: self.app.back_to_project())
+        ctk.CTkLabel(self._crumb_frame, text="  ›  ",
+                     font=ctk.CTkFont(size=12),
+                     text_color="gray60").pack(side="left")
+        ctk.CTkLabel(self._crumb_frame, text=folder_name,
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color="white").pack(side="left")
+        if not self._crumb_frame.winfo_manager():
+            self._crumb_frame.pack(pady=(0, 6), padx=15, fill="x",
+                                   before=self.btn_load_folder)
+
+    def hide_back_to_project(self):
+        self._crumb_frame.pack_forget()
 
     def hide_open_output(self):
         self._open_output_path = None
@@ -1309,6 +1335,7 @@ class Sidebar(ctk.CTkScrollableFrame):
         if self._image_list_frame is not None:
             self._image_list_frame.destroy()
             self._image_list_frame = None
+        self.hide_back_to_project()
         self.btn_finish_plot.pack_forget()
         self.sec_sessions.hide()
         self.sec_images.hide()
