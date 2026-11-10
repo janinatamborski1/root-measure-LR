@@ -1484,9 +1484,14 @@ class MeasurementMixin:
         pts = self.canvas._cr_points
         if pts is None:
             return
+        chosen = self.canvas._cr_plates          # None = every plate
+        root_plates = self.canvas._root_plates
         paths = {}
         for i, r in enumerate(results):
             p = r.get('path')
+            plate = root_plates[i] if i < len(root_plates) else 0
+            if chosen is not None and plate not in chosen:
+                continue                         # not counted: stays blank
             if r.get('method') not in ('skip', 'error') and p is not None \
                     and len(p) >= 2:
                 paths[i] = np.asarray(p, dtype=float)
@@ -1519,6 +1524,65 @@ class MeasurementMixin:
         if self.canvas._cr_points is not None:
             self._enter_cr_mode()
             return
+        root_plates = self.canvas._root_plates
+        plates_with_roots = sorted(set(
+            root_plates[i] if i < len(root_plates) else 0
+            for i, r in enumerate(self._results)
+            if r.get('method') not in ('skip', 'error')
+            and r.get('path') is not None and len(r['path']) >= 2))
+        if not plates_with_roots:
+            self._finish_measurement()
+            return
+        self._prompt_cr_plate_selection(plates_with_roots)
+
+    def _prompt_cr_plate_selection(self, plates_with_roots):
+        """Ask which plates (if any) to count crown roots on. Not every
+        species has crown roots, so skipping is a normal choice."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Count Crown Roots")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog, text="Which plates should crown roots be counted on?\n"
+                         "(Skip if this species has no crown roots.)",
+            wraplength=260, justify="left"
+        ).pack(padx=20, pady=(20, 10))
+
+        plate_vars = {}
+        for pi in plates_with_roots:
+            var = ctk.BooleanVar(value=False)
+            ctk.CTkCheckBox(dialog, text=f"Plate {pi + 1}", variable=var).pack(
+                anchor="w", padx=20, pady=4)
+            plate_vars[pi] = var
+
+        def on_confirm():
+            selected = {pi for pi, var in plate_vars.items() if var.get()}
+            dialog.destroy()
+            self._resume_start_count_cr(selected)
+
+        def on_skip():
+            dialog.destroy()
+            self._resume_start_count_cr(set())
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=(15, 20), padx=20, fill="x")
+        ctk.CTkButton(btn_frame, text="Skip All", fg_color="#555555",
+                      command=on_skip).pack(side="left", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_frame, text="Start Counting", fg_color="#2b5797",
+                      command=on_confirm).pack(side="left", expand=True, padx=(5, 0))
+        dialog.protocol("WM_DELETE_WINDOW", on_skip)
+
+    def _resume_start_count_cr(self, selected_plates):
+        """Continue crown-root counting once the plates have been picked."""
+        if not selected_plates:
+            # nothing to count: no crown-root numbers are saved for this scan
+            self.canvas._cr_points = None
+            self.canvas._cr_plates = None
+            self._finish_measurement()
+            return
+        self.canvas.set_cr_plates(selected_plates)
         self._ensure_plate_binaries(self._cr_autodetect)
 
     def _cr_autodetect(self):
@@ -1531,6 +1595,9 @@ class MeasurementMixin:
             if res.get('method') in ('skip', 'error') or p is None or len(p) < 2:
                 continue
             pi = root_plates[ri] if ri < len(root_plates) else 0
+            chosen = self.canvas._cr_plates
+            if chosen is not None and pi not in chosen:
+                continue
             items.append((pi, np.asarray(p)))
         binaries = self._plate_binaries
         skeletons = {}  # fresh per run: a cached skeleton could be a previous image's

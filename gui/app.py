@@ -379,6 +379,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
                 if canvas_data.get('lr_results'):
                     self.canvas.set_lr_results(canvas_data['lr_results'])
                 self.canvas.set_cr_points(canvas_data.get('cr_points'))
+                self.canvas.set_cr_plates(canvas_data.get('cr_plates'))
                 if canvas_data.get('root_bottoms'):
                     self.canvas.set_root_bottoms(canvas_data['root_bottoms'])
                 if canvas_data.get('traces'):
@@ -592,11 +593,22 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
             self.sidebar.show_back_to_project(root.name, self.folder.name)
         else:
             self.sidebar.hide_project()
+            if self.folder is not None and self.folder.parent != self.folder:
+                # a scan folder opened on its own: still show where it lives,
+                # and let the parent folder be clicked to go up one level
+                self.sidebar.show_back_to_project(
+                    self.folder.parent.name or str(self.folder.parent),
+                    self.folder.name, self.go_up_folder)
 
-    def back_to_project(self):
+    def go_up_folder(self):
+        """Open the parent of the current scan folder (its list of subfolders)."""
+        if self.folder is not None:
+            self.back_to_project(self.folder.parent)
+
+    def back_to_project(self, target=None):
         """Leave the current subfolder and show the project's folder list again.
         Whatever is already measured is kept; the current picture is saved as is."""
-        root = self._project_root
+        root = target if target is not None else self._project_root
         if root is None:
             return
         try:
@@ -1406,6 +1418,7 @@ class RootMeasureApp(MeasurementMixin, ctk.CTk):
         if cd.get('lr_results'):
             self.canvas.set_lr_results(cd['lr_results'])
         self.canvas.set_cr_points(cd.get('cr_points'))
+        self.canvas.set_cr_plates(cd.get('cr_plates'))
         if cd.get('root_bottoms'):
             self.canvas.set_root_bottoms(cd['root_bottoms'])
         if cd.get('traces'):

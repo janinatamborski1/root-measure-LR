@@ -363,6 +363,7 @@ def _collect_canvas(canvas, plate_thresholds=None, sidebar=None):
         'trace_to_result': list(canvas._trace_to_result),
         'cr_points': (None if canvas._cr_points is None
                       else [list(p) for p in canvas._cr_points]),
+        'cr_plates': canvas.get_cr_plates(),
     }
     if plate_thresholds:
         d['plate_thresholds'] = {str(k): dict(v)

@@ -107,6 +107,7 @@ class ImageCanvas(ctk.CTkFrame):
         # 'auto' or 'manual'. None = never counted, [] = counted, zero. Each
         # point belongs to the plant whose primary trace is nearest.
         self._cr_points = None
+        self._cr_plates = None      # plates crown roots are counted on (None = all)
         self._cr_marker_ids = []
 
         # edit-trace state (drag control points to reshape an existing path)
@@ -339,8 +340,15 @@ class ImageCanvas(ctk.CTkFrame):
     def get_cr_points(self):
         return None if self._cr_points is None else list(self._cr_points)
 
+    def set_cr_plates(self, plates):
+        self._cr_plates = None if plates is None else sorted(int(p) for p in plates)
+
+    def get_cr_plates(self):
+        return None if self._cr_plates is None else list(self._cr_plates)
+
     def clear_cr_points(self):
         self._cr_points = None
+        self._cr_plates = None
         self._cr_marker_ids.clear()
 
     def cr_owner_trace(self, row, col):

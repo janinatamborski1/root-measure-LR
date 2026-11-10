@@ -1302,7 +1302,7 @@ class Sidebar(ctk.CTkScrollableFrame):
             self.btn_open_output.pack(pady=(0, 5), padx=15, fill="x",
                                       after=self.btn_load_folder)
 
-    def show_back_to_project(self, project_name, folder_name):
+    def show_back_to_project(self, project_name, folder_name, command=None):
         """Path line at the very top of the FOLDER section: the parent folder
         (click it to go back and pick another subfolder) > the open subfolder."""
         for w in self._crumb_frame.winfo_children():
@@ -1311,7 +1311,7 @@ class Sidebar(ctk.CTkScrollableFrame):
                           font=ctk.CTkFont(size=12, weight="bold"),
                           text_color="#7b8cff", cursor="hand2")
         up.pack(side="left")
-        up.bind("<Button-1>", lambda e: self.app.back_to_project())
+        up.bind("<Button-1>", lambda e: (command or self.app.back_to_project)())
         ctk.CTkLabel(self._crumb_frame, text="  ›  ",
                      font=ctk.CTkFont(size=12),
                      text_color="gray60").pack(side="left")
