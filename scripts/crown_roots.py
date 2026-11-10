@@ -12,11 +12,12 @@ Each crown root is returned as a point on it, so it can be matched to its plant
 by nearest primary root.
 """
 import numpy as np
+from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import dijkstra
 from skimage.morphology import skeletonize
 
-from config import CR_ZONE_CM, CR_MIN_LEN_CM, CR_MARK_CM
+from config import CR_ZONE_CM, CR_MIN_LEN_CM, CR_MARK_CM, CR_MAX_WIDTH_X
 
 _ROI_UP_CM = 2.0
 _ROI_DOWN_CM = 16.0
@@ -65,6 +66,7 @@ def detect_crown_roots(binary, path, scale, skeleton=None, all_paths=None):
     ca = max(0, int(c0 - _ROI_SIDE_CM * scale))
     cb = min(w, int(c0 + _ROI_SIDE_CM * scale))
     sk = skeleton[ra:rb, ca:cb]
+    dt = ndimage.distance_transform_edt(binary[ra:rb, ca:cb])
     if not sk.any():
         return []
     ys, xs, G = _skeleton_graph(sk)
@@ -89,6 +91,13 @@ def detect_crown_roots(binary, path, scale, skeleton=None, all_paths=None):
         ok = (rr >= 0) & (rr < sk.shape[0]) & (cc >= 0) & (cc < sk.shape[1])
         other[rr[ok], cc[ok]] = True
 
+    # typical root half-width: the traced primary root near its top
+    pp0 = np.round(path[:int(0.8 * scale) + 1]).astype(int)
+    rr0, cc0 = pp0[:, 0] - ra, pp0[:, 1] - ca
+    ok0 = (rr0 >= 0) & (rr0 < sk.shape[0]) & (cc0 >= 0) & (cc0 < sk.shape[1])
+    root_w = float(np.median(dt[rr0[ok0], cc0[ok0]])) if ok0.any() else 3.0
+    root_w = max(root_w, 2.0)
+    crown_row = r0 - ra          # roots grow down from here, leaves grow up
     min_len = CR_MIN_LEN_CM * scale
     zone = CR_ZONE_CM * scale
     mark = CR_MARK_CM * scale
@@ -119,6 +128,12 @@ def detect_crown_roots(binary, path, scale, skeleton=None, all_paths=None):
         if v < 0 or not walk:
             continue
         piece = dist[t] - dist[v]
+        # the shoot: leaves rise above the crown and are much wider than roots
+        w_row = np.array(walk)
+        if ys[w_row].min() < crown_row - 0.5 * scale:
+            continue
+        if np.median(dt[ys[w_row], xs[w_row]]) > CR_MAX_WIDTH_X * root_w:
+            continue
         if first:                       # the longest root: the primary root
             chosen[walk] = True
             chosen[v] = True

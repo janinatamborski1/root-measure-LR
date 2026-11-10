@@ -93,5 +93,6 @@ def sort_genotypes_wt_first(genotypes):
 
 # Crown root detection (crown roots start near the top of the primary root)
 CR_ZONE_CM = 4              # A crown root must leave the primary root within this distance of its top
-CR_MIN_LEN_CM = 3           # Min length of a crown root (filters stubs and small side roots)
+CR_MIN_LEN_CM = 2             # Min length of a crown root (filters stubs and small side roots)
+CR_MAX_WIDTH_X = 2.0          # Pieces wider than this many times the primary root are shoot, not roots
 CR_MARK_CM = 1.5              # Marker sits this far along each crown root
